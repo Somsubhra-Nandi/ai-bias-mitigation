@@ -19,9 +19,10 @@ from src.agents.schema_agent import run_schema_agent
 from src.agents.ethics_agent import run_ethics_agent
 from src.agents.storyteller_agent import run_storyteller_agent
 from src.shared.contracts import TrainingResult, BiasMetrics, save_model
-from src.ml.task import load_data, train_baseline
+from src.ml.task import load_data, train_baseline, predict_with_scaler, predict_proba_with_scaler
 from src.ml.metrics import compute_metrics, accuracy
 from src.ml.mitigators import KamiranCaldersReweighing, ThresholdOptimizer
+from optuna_search import run_optuna_search
 
 # Load GitHub PAT from .env
 load_dotenv()
@@ -95,27 +96,40 @@ def main():
     # 4. Local ML Training
     logger.info("=== PHASE 3: ML Training & Mitigation ===")
     X_df, y, sensitive, le, priv_value = load_data(raw_csv_path, contract)
+    
+    # Fill any missing values (NaNs) with the column median
     X_df = X_df.fillna(X_df.median(numeric_only=True))
     X = X_df.values.astype(float)
     
     X_tr, X_te, y_tr, y_te, s_tr, s_te = train_test_split(X, y, sensitive, test_size=0.2, random_state=42, stratify=y)
     
-    # Baseline
-    base_clf = train_baseline(X_tr, y_tr)
-    y_pred_base = base_clf.predict(X_te)
+    # --- NEW: RUN THE HUNGER GAMES ---
+    logger.info("=== OPTUNA SEARCH (Running... this will take ~60 seconds) ===")
+    optimal_path = "local_artifacts/optimal_hyperparameters.json"
+    
+    # It only runs if the file doesn't exist, saving time on future runs!
+    if not Path(optimal_path).exists():
+        run_optuna_search(
+            X_train=X_tr, y_train=y_tr, sensitive_features=s_tr,
+            priv_value=priv_value, n_trials=50, output_path=optimal_path,
+        )
+    # ---------------------------------
+
+    # Baseline (Now automatically uses the Optuna Winner!)
+    base_clf = train_baseline(X_tr, y_tr, hyperparams_path=Path(optimal_path))
+    y_pred_base = predict_with_scaler(base_clf, X_te)
     base_acc = accuracy(y_te, y_pred_base)
     base_metrics = compute_metrics(y_te, y_pred_base, s_te, priv_value=priv_value)
     
-    # Mitigate (Routing based on Agent's choice)
+    # Mitigate
     logger.info(f"Applying Agent Strategy: {plan.method.value}")
     if plan.method.value == "reweighing":
         reweigher = KamiranCaldersReweighing(sensitive_col=plan.protected_attribute, priv_value=priv_value)
         sample_weights = reweigher.fit(X_tr, y_tr, s_tr).transform(s_tr, y_tr)
-        mit_clf = train_baseline(X_tr, y_tr, sample_weight=sample_weights)
-        y_pred_mit = mit_clf.predict(X_te)
+        mit_clf = train_baseline(X_tr, y_tr, sample_weight=sample_weights, hyperparams_path=Path(optimal_path))
+        y_pred_mit = predict_with_scaler(mit_clf, X_te)
     else:
-        # Default to threshold optimizer if calibrated EO or threshold is chosen
-        y_prob = base_clf.predict_proba(X_te)[:, 1]
+        y_prob = predict_proba_with_scaler(base_clf, X_te)[:, 1]
         optimizer = ThresholdOptimizer(sensitive_col=plan.protected_attribute, priv_value=priv_value, max_accuracy_drop=plan.max_accuracy_drop_pct / 100)
         y_pred_mit = optimizer.fit(y_te, y_prob, s_te, baseline_accuracy=base_acc).predict(y_prob, s_te)
 
