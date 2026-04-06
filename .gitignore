@@ -20,3 +20,6 @@ __pycache__/
 #data
 data/
 local_artifacts/
+
+# CatBoost auto-generated logs
+catboost_info/
