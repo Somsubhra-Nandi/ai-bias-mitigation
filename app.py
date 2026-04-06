@@ -148,6 +148,14 @@ def _load_scorecard() -> str | None:
         return Path("local_artifacts/fairness_scorecard.md").read_text(encoding="utf-8")
     except Exception:
         return None
+    
+def _load_optuna() -> dict | None:
+    try:
+        import json
+        from pathlib import Path
+        return json.loads(Path("local_artifacts/optimal_hyperparameters.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 # ── Prediction helper ─────────────────────────────────────────────────────────
 def _predict(features: dict) -> float:
@@ -202,72 +210,87 @@ if page == "📊 Metrics Dashboard":
     result = _load_result()
 
     if result is None:
-        st.info(
-            "No training result loaded from GCS. "
-            "Pass `--artifacts-bucket` to enable live data, "
-            "or use the demo data below."
-        )
-        # Demo data for standalone presentation
-        result = {
-            "baseline_accuracy":  0.7234,
-            "mitigated_accuracy": 0.7189,
-            "baseline_bias":  {"eod": -0.182, "aod": -0.134, "dir": 0.61, "spd": -0.21},
-            "mitigated_bias": {"eod": -0.031, "aod": -0.028, "dir": 0.91, "spd": -0.04},
-        }
-        st.caption("⚠️ Showing demo data — not connected to live GCS.")
+        st.warning("No training result loaded locally. Please run `python local_demo.py` first.")
+    else:
+        b = result["baseline_bias"]
+        m = result["mitigated_bias"]
 
-    b = result["baseline_bias"]
-    m = result["mitigated_bias"]
+        # ── Accuracy row ──────────────────────────────────────────────────────────
+        c1, c2, c3 = st.columns(3)
+        base_acc = result["baseline_accuracy"] * 100
+        mit_acc  = result["mitigated_accuracy"] * 100
+        drop     = base_acc - mit_acc
 
-    # ── Accuracy row ──────────────────────────────────────────────────────────
-    c1, c2, c3 = st.columns(3)
-    base_acc = result["baseline_accuracy"] * 100
-    mit_acc  = result["mitigated_accuracy"] * 100
-    drop     = base_acc - mit_acc
+        c1.metric("Baseline Accuracy",  f"{base_acc:.2f}%")
+        c2.metric("Mitigated Accuracy", f"{mit_acc:.2f}%", delta=f"{-drop:.3f}%")
+        c3.metric("Accuracy Sacrifice", f"{drop:.3f}%", 
+                  delta="Within 2% limit" if drop <= 2.0 else "⚠️ Exceeds limit", 
+                  delta_color="normal" if drop <= 2.0 else "inverse")
 
-    c1.metric("Baseline Accuracy",  f"{base_acc:.2f}%")
-    c2.metric("Mitigated Accuracy", f"{mit_acc:.2f}%", delta=f"{-drop:.3f}%")
-    c3.metric("Accuracy Sacrifice", f"{drop:.3f}%",
-              delta="Within 2% limit" if drop <= 2.0 else "⚠️ Exceeds limit",
-              delta_color="normal" if drop <= 2.0 else "inverse")
+        st.markdown("---")
 
-    st.markdown("---")
+        # ── Bias metrics table ────────────────────────────────────────────────────
+        st.subheader("Group Fairness Metrics")
+        import pandas as pd
+        metrics_df = pd.DataFrame([
+            {"Metric": "Equal Opportunity Diff (EOD)", "Threshold": "±0.05", "Baseline": f"{b['eod']:+.4f}", "Mitigated": f"{m['eod']:+.4f}", "Passes ✓": "✅" if abs(m["eod"]) <= 0.05 else "❌"},
+            {"Metric": "Average Odds Diff (AOD)", "Threshold": "±0.07", "Baseline": f"{b['aod']:+.4f}", "Mitigated": f"{m['aod']:+.4f}", "Passes ✓": "✅" if abs(m["aod"]) <= 0.07 else "❌"},
+            {"Metric": "Disparate Impact Ratio (DIR)", "Threshold": "≥ 0.80", "Baseline": f"{b['dir']:.4f}", "Mitigated": f"{m['dir']:.4f}", "Passes ✓": "✅" if m["dir"] >= 0.80 else "❌"},
+            {"Metric": "Statistical Parity Diff (SPD)", "Threshold": "±0.10", "Baseline": f"{b['spd']:+.4f}", "Mitigated": f"{m['spd']:+.4f}", "Passes ✓": "✅" if abs(m["spd"]) <= 0.10 else "❌"},
+        ])
+        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-    # ── Bias metrics table ────────────────────────────────────────────────────
-    st.subheader("Group Fairness Metrics")
+        # ── V2 UPGRADE: OPTUNA PARETO FRONTIER & WHAT-IF SLIDER ──────────────────
+        optuna_data = _load_optuna()
+        if optuna_data and "all_pareto_trials" in optuna_data:
+            st.markdown("---")
+            st.header("🧬 V2 AutoML: AI Ethics Negotiation")
+            st.markdown("Our multi-objective AutoML search evaluated hundreds of architectures. The chart below proves the mathematical boundary of fairness vs. accuracy for this dataset.")
 
-    import pandas as pd
-    metrics_df = pd.DataFrame([
-        {
-            "Metric": "Equal Opportunity Diff (EOD)",
-            "Threshold": "±0.05",
-            "Baseline": f"{b['eod']:+.4f}",
-            "Mitigated": f"{m['eod']:+.4f}",
-            "Passes ✓": "✅" if abs(m["eod"]) <= 0.05 else "❌",
-        },
-        {
-            "Metric": "Average Odds Diff (AOD)",
-            "Threshold": "±0.07",
-            "Baseline": f"{b['aod']:+.4f}",
-            "Mitigated": f"{m['aod']:+.4f}",
-            "Passes ✓": "✅" if abs(m["aod"]) <= 0.07 else "❌",
-        },
-        {
-            "Metric": "Disparate Impact Ratio (DIR)",
-            "Threshold": "≥ 0.80",
-            "Baseline": f"{b['dir']:.4f}",
-            "Mitigated": f"{m['dir']:.4f}",
-            "Passes ✓": "✅" if m["dir"] >= 0.80 else "❌",
-        },
-        {
-            "Metric": "Statistical Parity Diff (SPD)",
-            "Threshold": "±0.10",
-            "Baseline": f"{b['spd']:+.4f}",
-            "Mitigated": f"{m['spd']:+.4f}",
-            "Passes ✓": "✅" if abs(m["spd"]) <= 0.10 else "❌",
-        },
-    ])
-    st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+            pareto_trials = optuna_data["all_pareto_trials"]
+            df_pareto = pd.DataFrame(pareto_trials)
+            
+            # The Pareto Scatter Plot
+            try:
+                import plotly.express as px
+                fig = px.scatter(
+                    df_pareto, x="cv_abs_eod", y="cv_accuracy", color="model",
+                    hover_data=["trial_number"],
+                    title="The Pareto Frontier (Accuracy vs. Fairness)",
+                    labels={"cv_abs_eod": "Absolute EOD Bias (Closer to 0.0 is better)", "cv_accuracy": "Cross-Validation Accuracy (Higher is better)"},
+                    size_max=15
+                )
+                fig.update_traces(marker=dict(size=12, line=dict(width=2, color='DarkSlateGrey')))
+                fig.update_layout(template="plotly_dark", height=400)
+                st.plotly_chart(fig, use_container_width=True)
+            except ImportError:
+                st.info("Install plotly for interactive charts: `pip install plotly`")
+
+            # The What-If Slider
+            st.subheader("🎛️ Interactive 'What-If' Corporate Ethics Slider")
+            st.info("Act as the Compliance Officer. Adjust the maximum accuracy sacrifice the business is willing to accept, and watch the AI dynamically select the fairest possible model.")
+            
+            max_possible_acc = df_pareto["cv_accuracy"].max()
+            
+            col1, col2 = st.columns([1, 1.5])
+            with col1:
+                allowed_drop = st.slider("Acceptable Accuracy Drop (%)", min_value=0.0, max_value=15.0, value=2.0, step=0.5)
+            
+            # Dynamic Filter Logic
+            min_acc_req = max_possible_acc - (allowed_drop / 100.0)
+            valid_trials = df_pareto[df_pareto["cv_accuracy"] >= min_acc_req]
+            
+            with col2:
+                if not valid_trials.empty:
+                    # Find the fairest model among the valid ones
+                    best_tradeoff = valid_trials.loc[valid_trials["cv_abs_eod"].idxmin()]
+                    st.success(f"**Winning Architecture:** `{best_tradeoff['model'].upper()}` (Trial #{best_tradeoff['trial_number']})")
+                    
+                    c1, c2 = st.columns(2)
+                    c1.metric("Predicted Accuracy", f"{best_tradeoff['cv_accuracy']*100:.2f}%", delta=f"{(best_tradeoff['cv_accuracy'] - max_possible_acc)*100:.2f}% drop", delta_color="normal")
+                    c2.metric("Predicted |EOD| Bias", f"{best_tradeoff['cv_abs_eod']:.4f}", delta="Optimized Fairness", delta_color="inverse")
+                else:
+                    st.error("❌ No models discovered that can maintain that level of accuracy. You must accept a larger drop to achieve fairness.")
 
     # ── Bar charts ────────────────────────────────────────────────────────────
     try:
