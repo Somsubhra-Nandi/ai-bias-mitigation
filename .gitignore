@@ -1,0 +1,18 @@
+# Environments
+venv/
+.env
+
+# Google Cloud / MLflow
+.gcp/
+mlruns/
+*.json  # Ignores local JSON dumps, remove if you want to commit contracts
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Logs
+*.log
