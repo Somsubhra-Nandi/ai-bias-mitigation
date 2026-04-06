@@ -41,3 +41,9 @@ black>=24.0.0
 ruff>=0.3.0
 requests
 python-dotenv>=1.0.0
+
+# ── AutoML & Gradient Boosters (V2 Upgrade) ───
+optuna
+xgboost
+lightgbm
+catboost
