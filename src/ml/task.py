@@ -28,10 +28,11 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.ml.metrics import compute_metrics, accuracy, classification_report_dict, FairnessMetrics
 from src.ml.mitigators import KamiranCaldersReweighing, ThresholdOptimizer, get_mitigator
+from optuna_search import build_model_from_params
 from src.shared.contracts import (
     DatasetContract,
     MitigationPlan,
@@ -55,6 +56,7 @@ SEED              = 42
 TEST_SIZE         = 0.20
 EXPERIMENT_NAME   = "fairguard-debiasing"
 MODEL_ARTIFACT    = "model.joblib"
+OPTIMAL_HYPERPARAMS_PATH = Path("local_artifacts/optimal_hyperparameters.json")
 
 
 def parse_args() -> argparse.Namespace:
@@ -122,16 +124,85 @@ def train_baseline(
     X_train: np.ndarray,
     y_train: np.ndarray,
     sample_weight: np.ndarray | None = None,
-) -> GradientBoostingClassifier:
-    clf = GradientBoostingClassifier(
-        n_estimators=200,
-        max_depth=4,
-        learning_rate=0.08,
-        subsample=0.8,
-        random_state=SEED,
-    )
-    clf.fit(X_train, y_train, sample_weight=sample_weight)
+    hyperparams_path: Path | None = None,
+) -> Any:
+    """
+    Train the best model found by Optuna, or fall back to GradientBoosting.
+
+    If `hyperparams_path` is provided and the file exists, the Optuna winner
+    is instantiated via build_model_from_params().  Otherwise falls back to
+    the original hardcoded GradientBoostingClassifier so the pipeline never
+    breaks even when Optuna hasn't been run yet.
+    """
+    from typing import Any
+
+    hp_path = hyperparams_path or OPTIMAL_HYPERPARAMS_PATH
+
+    if hp_path.exists():
+        try:
+            params = json.loads(hp_path.read_text())
+            clf = build_model_from_params(params)
+            logger.info(
+                "Loaded Optuna winner: model=%s  cv_acc=%.4f  cv_|EOD|=%.4f",
+                params["model_name"],
+                params.get("cv_accuracy", float("nan")),
+                params.get("cv_abs_eod",  float("nan")),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to load Optuna hyperparameters (%s) — falling back to GBM.", exc
+            )
+            clf = GradientBoostingClassifier(
+                n_estimators=200, max_depth=4, learning_rate=0.08,
+                subsample=0.8, random_state=SEED,
+            )
+    else:
+        logger.info(
+            "No optimal_hyperparameters.json found at %s — using default GBM. "
+            "Run optuna_search.py first for best results.", hp_path,
+        )
+        clf = GradientBoostingClassifier(
+            n_estimators=200, max_depth=4, learning_rate=0.08,
+            subsample=0.8, random_state=SEED,
+        )
+
+    # StandardScaler is needed for distance-based & linear models
+    # It is a no-op for tree-based models (sklearn ignores it without error)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_train)
+
+    clf.fit(X_scaled, y_train, **_sample_weight_kwargs(clf, sample_weight))
+    # Attach scaler so predict() can use it later
+    clf._fairguard_scaler = scaler
     return clf
+
+
+def _sample_weight_kwargs(clf, sample_weight):
+    """Return sample_weight dict only if the classifier supports it."""
+    if sample_weight is None:
+        return {}
+    try:
+        import inspect
+        sig = inspect.signature(clf.fit)
+        if "sample_weight" in sig.parameters:
+            return {"sample_weight": sample_weight}
+    except Exception:
+        pass
+    return {}
+
+
+def predict_with_scaler(clf, X: np.ndarray) -> np.ndarray:
+    """Wrapper that applies the attached scaler before predict()."""
+    scaler = getattr(clf, "_fairguard_scaler", None)
+    X_in = scaler.transform(X) if scaler is not None else X
+    return clf.predict(X_in)
+
+
+def predict_proba_with_scaler(clf, X: np.ndarray) -> np.ndarray:
+    """Wrapper that applies the attached scaler before predict_proba()."""
+    scaler = getattr(clf, "_fairguard_scaler", None)
+    X_in = scaler.transform(X) if scaler is not None else X
+    return clf.predict_proba(X_in)
 
 
 def main() -> None:
@@ -163,6 +234,7 @@ def main() -> None:
         logger.info("MLflow run_id: %s", run_id)
 
         mlflow.log_param("seed",           SEED)
+        mlflow.log_param("optuna_winner",   str(OPTIMAL_HYPERPARAMS_PATH.exists()))
         mlflow.log_param("dataset_hash",   contract.dataset_hash)
         mlflow.log_param("version_tag",    contract.version_tag)
         mlflow.log_param("mitigation",     plan.method)
@@ -189,7 +261,7 @@ def main() -> None:
         # ── 3.2 Baseline training ─────────────────────────────────────────────
         logger.info("Training baseline model…")
         baseline_clf = train_baseline(X_tr, y_tr)
-        y_pred_base  = baseline_clf.predict(X_te)
+        y_pred_base  = predict_with_scaler(baseline_clf, X_te)
 
         base_acc     = accuracy(y_te, y_pred_base)
         base_metrics = compute_metrics(y_te, y_pred_base, s_te, priv_value=priv_value)
@@ -216,7 +288,7 @@ def main() -> None:
             reweigher.fit(X_tr, y_tr, s_tr)
             sample_weights = reweigher.transform(s_tr, y_tr)
             mit_clf  = train_baseline(X_tr, y_tr, sample_weight=sample_weights)
-            y_pred_mit = mit_clf.predict(X_te)
+            y_pred_mit = predict_with_scaler(mit_clf, X_te)
             mit_acc    = accuracy(y_te, y_pred_mit)
             mit_metrics = compute_metrics(y_te, y_pred_mit, s_te, priv_value=priv_value)
             final_clf = mit_clf
@@ -227,7 +299,7 @@ def main() -> None:
         ):
             # First train a standard model, then post-process thresholds
             base_clf2 = train_baseline(X_tr, y_tr)
-            y_prob    = base_clf2.predict_proba(X_te)[:, 1]
+            y_prob    = predict_proba_with_scaler(base_clf2, X_te)[:, 1]
             optimizer = ThresholdOptimizer(
                 sensitive_col=plan.protected_attribute,
                 priv_value=priv_value,
