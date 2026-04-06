@@ -1,0 +1,74 @@
+{
+  "policy_version": "ethics_policy_v1",
+  "description": "FairGuard Enterprise Ethics Policy — governing all AI fairness decisions.",
+  "last_updated": "2025-01-01",
+  "approved_by": "Chief Ethics Officer",
+
+  "allowed_mitigation_methods": [
+    "reweighing",
+    "threshold_optimizer",
+    "calibrated_eq_odds"
+  ],
+
+  "max_accuracy_drop_pct": 2.0,
+
+  "fairness_metrics": {
+    "primary":   "eod",
+    "secondary": ["aod", "dir", "spd"]
+  },
+
+  "fairness_thresholds": {
+    "eod": { "min": -0.05, "max":  0.05 },
+    "aod": { "min": -0.07, "max":  0.07 },
+    "dir": { "min":  0.80, "max":  1.20 },
+    "spd": { "min": -0.10, "max":  0.10 }
+  },
+
+  "prohibited_features": [
+    "name", "first_name", "last_name",
+    "ssn", "social_security_number",
+    "national_id", "passport_number",
+    "address", "zip_code", "postal_code",
+    "email", "phone_number",
+    "ip_address", "device_id"
+  ],
+
+  "protected_attribute_handling": {
+    "must_flag_as_protected": ["gender", "sex", "race", "ethnicity",
+                               "religion", "nationality", "age_group"],
+    "may_use_for_fairness_audit": true,
+    "must_not_use_as_model_feature": false,
+    "note": "Protected attributes may appear as features but bias mitigation MUST be applied."
+  },
+
+  "human_in_the_loop": {
+    "required": true,
+    "approver_role": "Compliance Officer",
+    "notification_method": "pubsub",
+    "max_approval_wait_hours": 72,
+    "auto_rollback_if_unapproved": true
+  },
+
+  "canary_deployment": {
+    "required": true,
+    "initial_traffic_pct": 10,
+    "promotion_traffic_pct": 100,
+    "min_canary_observation_hours": 24
+  },
+
+  "monitoring": {
+    "drift_detection": true,
+    "drift_alert_threshold": 0.10,
+    "retrain_on_drift": true,
+    "monitoring_cadence_hours": 24
+  },
+
+  "audit_retention_days": 730,
+
+  "legal_frameworks_referenced": [
+    "EU AI Act (2024)",
+    "EEOC Uniform Guidelines (four-fifths rule)",
+    "IEEE 7000-2021 (Ethically Aligned Design)",
+    "ISO/IEC 42001 (AI Management Systems)"
+  ]
+}
