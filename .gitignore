@@ -1,0 +1,25 @@
+# Environments
+venv/
+.env
+
+# Google Cloud / MLflow
+.gcp/
+mlruns/
+# *.json  # Ignored - uncomment to exclude local JSON dumps
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Logs
+*.log
+
+#data
+data/
+local_artifacts/
+
+# CatBoost auto-generated logs
+catboost_info/

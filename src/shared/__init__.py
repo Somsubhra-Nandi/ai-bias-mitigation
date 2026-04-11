@@ -1,0 +1,45 @@
+# src/shared/__init__.py
+from src.shared.contracts import (
+    DatasetContract,
+    MitigationPlan,
+    TrainingResult,
+    ValidationReport,
+    GateDecision,
+    DeploymentManifest,
+    BiasMetrics,
+    FeatureSpec,
+    FairnessThreshold,
+    LeakageFlag,
+    PipelineStatus,
+    MitigationMethod,
+    FeatureType,
+    load_contract,
+    load_mitigation_plan,
+    save_model,
+)
+from src.shared.gcp_utils import (
+    init_vertex,
+    gcs_upload,
+    gcs_download,
+    gcs_upload_string,
+    gcs_read_string,
+    sha256_file,
+    log_dataset_version,
+    register_model,
+    get_or_create_endpoint,
+    deploy_canary,
+    publish_hitl_alert,
+    get_experiment_run,
+)
+
+__all__ = [
+    "DatasetContract", "MitigationPlan", "TrainingResult",
+    "ValidationReport", "GateDecision", "DeploymentManifest",
+    "BiasMetrics", "FeatureSpec", "FairnessThreshold", "LeakageFlag",
+    "PipelineStatus", "MitigationMethod", "FeatureType",
+    "load_contract", "load_mitigation_plan", "save_model",
+    "init_vertex", "gcs_upload", "gcs_download", "gcs_upload_string",
+    "gcs_read_string", "sha256_file", "log_dataset_version",
+    "register_model", "get_or_create_endpoint", "deploy_canary",
+    "publish_hitl_alert", "get_experiment_run",
+]
