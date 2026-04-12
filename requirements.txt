@@ -47,3 +47,6 @@ optuna
 xgboost
 lightgbm
 catboost
+
+# ── LLM SDKs ─────────────────────────────────────────────────────────────
+openai
