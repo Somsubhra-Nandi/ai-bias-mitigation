@@ -24,6 +24,9 @@ from src.ml.metrics import compute_metrics, accuracy
 from src.ml.mitigators import KamiranCaldersReweighing, ThresholdOptimizer
 from optuna_search import run_optuna_search
 
+from src.ml.human_impact import compute_human_impact
+from src.agents.debate_agent import run_debate_agent
+
 # Load GitHub PAT from .env
 load_dotenv()
 
@@ -136,6 +139,15 @@ def main():
     mit_acc = accuracy(y_te, y_pred_mit)
     mit_metrics = compute_metrics(y_te, y_pred_mit, s_te, priv_value=priv_value)
     
+    # ── Phase 3.5: Degenerate Detector + Human Impact ─────────────────────────
+    logger.info("=== PHASE 3.5: Degenerate Detector & Human Impact ===")
+    human_impact = compute_human_impact(
+        y_true=y_te,
+        y_pred_mitigated=y_pred_mit,
+        mitigated_dir=mit_metrics.dir,
+        output_path=str(out_dir / "human_impact.json"),
+    )
+    
     # Save Results
     result = TrainingResult(
         experiment_id="local_dev", run_id="local_run_001", dataset_hash="local_hash_123",
@@ -146,11 +158,25 @@ def main():
     )
     save_model(result, str(out_dir / "training_result.json"))
 
+    # ── Phase 3.7: Multi-Agent Debate ─────────────────────────────────────────
+    logger.info("=== PHASE 3.7: Multi-Agent Debate ===")
+    try:
+        debate = run_debate_agent(
+            human_impact_path=str(out_dir / "human_impact.json"),
+            training_result_path=str(out_dir / "training_result.json"),
+            output_path=str(out_dir / "agent_debate.json"),
+        )
+    except Exception as e:
+        logger.warning(f"Debate agent failed: {e}")
+        
     # 5. Storyteller Agent
     logger.info("=== PHASE 4: Storyteller Agent ===")
     run_storyteller_agent(
         contract=contract, plan=plan, result=result, gate_passed=True,
-        endpoint_name="local-dev-endpoint", output_path=str(out_dir / "fairness_scorecard.md")
+        endpoint_name="local-dev-endpoint", 
+        human_impact_path=str(out_dir / "human_impact.json"), # NEW
+        debate_path=str(out_dir / "agent_debate.json"),       # NEW
+        output_path=str(out_dir / "fairness_scorecard.md")
     )
     
     logger.info(f"✅ Local pipeline complete! All files saved to {out_dir.absolute()}")
