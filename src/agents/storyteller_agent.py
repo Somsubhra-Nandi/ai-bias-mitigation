@@ -225,7 +225,7 @@ def run_storyteller_agent(
 
     if output_path:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(output_path).write_text(full_doc)
+        Path(output_path).write_text(full_doc,encoding="utf-8")
         logger.info("Scorecard → %s [%s]", output_path, "REJECTION" if rejection_mode else "STANDARD")
 
     return full_doc
