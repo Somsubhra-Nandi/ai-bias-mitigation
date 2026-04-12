@@ -65,7 +65,7 @@ def compute_human_impact(
     predicted_yes_ratio = round(predicted_yes / test_set_size, 6)
 
     # ── Degenerate detection ──────────────────────────────────────────────────
-    is_degenerate = predicted_yes_ratio > DEGENERATE_THRESHOLD
+    is_degenerate = predicted_yes_ratio > 0.90 or predicted_yes_ratio < 0.10
     dir_failure   = mitigated_dir < DIR_FAILURE_THRESHOLD
 
     if is_degenerate:
