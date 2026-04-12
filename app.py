@@ -2,19 +2,6 @@
 app.py
 ───────
 FairGuard Streamlit Dashboard — bulletproof local backup for the demo.
-
-Displays:
-  • Live fairness metrics with before/after comparison
-  • Bias gauge charts (EOD, AOD, DIR, SPD)
-  • Fairness scorecard rendered from GCS
-  • Interactive prediction tester against the live Vertex Endpoint
-  • Compliance checklist
-
-Run:
-    streamlit run app.py -- \
-        --project my-gcp-project \
-        --version-tag ilpd_v1 \
-        --artifacts-bucket my-gcp-project-artifacts
 """
 
 from __future__ import annotations
@@ -74,53 +61,20 @@ def _get_args():
         args = parser.parse_args([])
     return args
 
-
 args = _get_args()
 
-
-# ── GCS helpers (cached) ──────────────────────────────────────────────────────
-@st.cache_data(ttl=120, show_spinner=False)
-def _load_json_from_gcs(gcs_uri: str) -> dict:
-    from google.cloud import storage
-    uri = gcs_uri.removeprefix("gs://")
-    bucket_name, _, blob_name = uri.partition("/")
-    client = storage.Client()
-    blob   = client.bucket(bucket_name).blob(blob_name)
-    return json.loads(blob.download_as_text())
-
-
-@st.cache_data(ttl=120, show_spinner=False)
-def _load_md_from_gcs(gcs_uri: str) -> str:
-    from google.cloud import storage
-    uri = gcs_uri.removeprefix("gs://")
-    bucket_name, _, blob_name = uri.partition("/")
-    client = storage.Client()
-    return client.bucket(bucket_name).blob(blob_name).download_as_text()
-
-#this is for cloud,will run the local one for testing phase. 
-# def _load_result() -> dict | None:
-#     if not args.artifacts_bucket:
-#         return None
-#     uri = (
-#         f"gs://{args.artifacts_bucket}/models/{args.version_tag}/training_result.json"
-#     )
-#     try:
-#         return _load_json_from_gcs(uri)
-#     except Exception as e:
-#         st.warning(f"Could not load training result from GCS: {e}")
-#         return None
-
-
-# def _load_scorecard() -> str | None:
-#     if not args.artifacts_bucket:
-#         return None
-#     uri = (
-#         f"gs://{args.artifacts_bucket}/reports/{args.version_tag}/fairness_scorecard.md"
-#     )
-#     try:
-#         return _load_md_from_gcs(uri)
-#     except Exception:
-#         return None
+# ── Local Data Loaders ────────────────────────────────────────────────────────
+@st.cache_data
+def load_debate_log():
+    try:
+        import json
+        from pathlib import Path
+        path = Path("local_artifacts/agent_debate.json")
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+        return None
+    except Exception as e:
+        return None
 
 def _load_result() -> dict | None:
     try:
@@ -139,7 +93,6 @@ def _load_result() -> dict | None:
                 }
         return res
     except Exception as e:
-        import streamlit as st
         st.warning(f"Could not load training result locally: {e}")
         return None
 
@@ -316,10 +269,8 @@ if page == "📊 Metrics Dashboard":
             opacity=0.9,
         ))
 
-        fig.add_hline(y=0.05,  line_dash="dot", line_color="#ffab40",
-                      annotation_text="+0.05 threshold")
-        fig.add_hline(y=-0.05, line_dash="dot", line_color="#ffab40",
-                      annotation_text="-0.05 threshold")
+        fig.add_hline(y=0.05,  line_dash="dot", line_color="#ffab40", annotation_text="+0.05 threshold")
+        fig.add_hline(y=-0.05, line_dash="dot", line_color="#ffab40", annotation_text="-0.05 threshold")
 
         fig.update_layout(
             title="Bias Metrics: Baseline vs. Mitigated",
@@ -331,27 +282,43 @@ if page == "📊 Metrics Dashboard":
         st.plotly_chart(fig, use_container_width=True)
 
     except ImportError:
-        st.info("Install plotly for interactive charts: `pip install plotly`")
+        pass
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PAGE: FAIRNESS SCORECARD
+# PAGE: FAIRNESS SCORECARD (MERGED WITH DEBATE)
 # ═════════════════════════════════════════════════════════════════════════════
 elif page == "📄 Fairness Scorecard":
-    st.header("📄 Fairness Scorecard")
+    
+    # --- 1. Multi-Agent Debate Section ---
+    st.header("🤖 Live Multi-Agent Ethics Debate")
+    st.markdown("Before deployment, our autonomous AI agents debate the **Real-World Human Impact** (False Positives vs. False Negatives) of the model.")
 
+    debate_log = load_debate_log()
+
+    if debate_log:
+        # Create a nice chat interface
+        for chat in debate_log:
+            if chat.get("speaker") == "Compliance_Officer":
+                with st.chat_message("user", avatar="🛡️"):
+                    st.markdown(f"**Dr. Priya (Compliance):** {chat.get('message')}")
+            else:
+                with st.chat_message("assistant", avatar="💼"):
+                    st.markdown(f"**Alex (Product Manager):** {chat.get('message')}")
+    else:
+        st.warning("No debate log found. Run the pipeline to generate the transcript.")
+        
+    st.markdown("---")
+    
+    # --- 2. Final Scorecard/Audit Section ---
+    st.header("📄 Final Automated Audit Report")
     scorecard = _load_scorecard()
     if scorecard:
         st.markdown(scorecard)
     else:
-        st.info(
-            "Scorecard not found in GCS. "
-            "It is generated during Phase 5 of the pipeline.\n\n"
-            "Expected path: "
-            f"`gs://{args.artifacts_bucket}/reports/{args.version_tag}/fairness_scorecard.md`"
-        )
+        st.info("Scorecard not found locally. Run the pipeline to generate it.")
 
-
+    
 # ═════════════════════════════════════════════════════════════════════════════
 # PAGE: LIVE PREDICTOR
 # ═════════════════════════════════════════════════════════════════════════════
@@ -371,7 +338,7 @@ elif page == "🔬 Live Predictor":
 
         col1, col2 = st.columns(2)
         with col1:
-            age    = st.slider("Age",                 18, 90, 45)
+            age    = st.slider("Age",                18, 90, 45)
             tb     = st.slider("Total Bilirubin",    0.1, 75.0, 1.5, step=0.1)
             db     = st.slider("Direct Bilirubin",   0.0, 20.0, 0.5, step=0.1)
             alkphos= st.slider("Alkaline Phosphatase",60, 2110, 200)
