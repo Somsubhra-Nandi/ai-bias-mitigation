@@ -172,10 +172,9 @@ def _suggest_model(trial: optuna.Trial) -> Any:
     elif model_name == "adaboost":
         from sklearn.ensemble import AdaBoostClassifier
         return AdaBoostClassifier(
-            n_estimators    = trial.suggest_int("ada_n_est",      50, 300),
-            learning_rate   = trial.suggest_float("ada_lr",      1e-3, 2.0, log=True),
-            algorithm       = trial.suggest_categorical("ada_alg", ["SAMME", "SAMME.R"]),
-            random_state    = SEED,
+            n_estimators  = trial.suggest_int("ada_n_est", 50, 300),
+            learning_rate = trial.suggest_float("ada_lr", 1e-3, 2.0, log=True),
+            random_state  = SEED,
         )
 
     # ── MLP Neural Network ────────────────────────────────────────────────────

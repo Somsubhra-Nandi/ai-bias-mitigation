@@ -5,7 +5,7 @@ venv/
 # Google Cloud / MLflow
 .gcp/
 mlruns/
-*.json  # Ignores local JSON dumps, remove if you want to commit contracts
+# *.json  # Ignored - uncomment to exclude local JSON dumps
 
 # Python
 __pycache__/
