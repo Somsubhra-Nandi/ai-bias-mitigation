@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import anthropic
+from openai import OpenAI
 
 from src.shared.contracts import DatasetContract, MitigationPlan, TrainingResult
 
@@ -103,7 +103,11 @@ def run_storyteller_agent(
     output_path:           Optional[str] = None,
     model:                 str = "claude-sonnet-4-20250514",
 ) -> str:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    token = os.environ.get("GITHUB_PAT")
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com",
+        api_key=token,
+    )
 
     # Load human_impact.json
     hi_path = Path(human_impact_path)
