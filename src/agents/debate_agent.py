@@ -180,10 +180,10 @@ def run_debate_agent(
     )
 
     # ── Initialise GitHub Models client ──────────────────────────────────────
-    token = github_token or os.environ.get("GITHUB_TOKEN")
+    token = github_token or os.environ.get("GITHUB_PAT")
     if not token:
         raise ValueError(
-            "GitHub PAT not found. Set GITHUB_TOKEN env var or pass github_token param."
+            "GitHub PAT not found. Set GITHUB_PAT env var or pass github_token param."
         )
 
     client = OpenAI(
