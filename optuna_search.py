@@ -320,6 +320,7 @@ def run_optuna_search(
     n_trials:           int = 100,
     output_path:        str = "local_artifacts/optimal_hyperparameters.json",
     show_progress:      bool = True,
+    dataset_hash:       str = "",
 ) -> dict[str, Any]:
     """
     Run multi-objective Optuna search.
@@ -395,6 +396,7 @@ def run_optuna_search(
         "all_pareto_trials": pareto_trials,
         "seed":              SEED,
         "n_folds":           N_FOLDS,
+        "dataset_hash":      dataset_hash,
     }
 
     # ── Save to disk ──────────────────────────────────────────────────────────

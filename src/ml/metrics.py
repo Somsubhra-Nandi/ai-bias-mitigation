@@ -111,7 +111,7 @@ def compute_metrics(
     eod = unpriv_tpr - priv_tpr                              # should be ≈ 0
     aod = 0.5 * ((unpriv_fpr - priv_fpr) + (unpriv_tpr - priv_tpr))
     spd = unpriv_ppr - priv_ppr
-    dir = _safe_rate(int(unpriv_ppr * 1000), int(priv_ppr * 1000))   # ratio
+    dir = unpriv_ppr / priv_ppr if priv_ppr > 0 else 0.0              # ratio — direct float division avoids int() truncation
 
     metrics = FairnessMetrics(eod=eod, aod=aod, dir=dir, spd=spd)
     logger.info("Fairness metrics: %s", metrics)

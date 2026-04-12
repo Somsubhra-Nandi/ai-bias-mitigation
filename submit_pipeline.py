@@ -8,7 +8,7 @@ inside Vertex AI on Google infrastructure.
 
 Usage
 ─────
-    export ANTHROPIC_API_KEY="sk-ant-..."
+    export GITHUB_PAT="ghp_your_token_here"
     export GOOGLE_APPLICATION_CREDENTIALS="/path/to/sa-ingestion-key.json"
 
     python submit_pipeline.py \
@@ -75,8 +75,12 @@ def validate_environment() -> list[str]:
     """Return a list of missing/invalid environment issues."""
     issues: list[str] = []
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        issues.append("ANTHROPIC_API_KEY environment variable is not set.")
+    if not os.environ.get("GITHUB_PAT"):
+        issues.append(
+            "GITHUB_PAT environment variable is not set. "
+            "Required by Schema, Ethics, and Storyteller agents (GitHub Models API). "
+            "Get a token at https://github.com/settings/tokens"
+        )
 
     if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
         # Try Application Default Credentials

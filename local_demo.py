@@ -106,17 +106,39 @@ def main():
     
     X_tr, X_te, y_tr, y_te, s_tr, s_te = train_test_split(X, y, sensitive, test_size=0.2, random_state=42, stratify=y)
     
-    # --- NEW: RUN THE HUNGER GAMES ---
-    logger.info("=== OPTUNA SEARCH (Running... this will take ~60 seconds) ===")
+   # --- OPTUNA SEARCH with cache invalidation ---
+    logger.info("=== OPTUNA SEARCH ===")
     optimal_path = "local_artifacts/optimal_hyperparameters.json"
-    
-    # It only runs if the file doesn't exist, saving time on future runs!
-    if not Path(optimal_path).exists():
+
+    import hashlib
+    csv_hash = hashlib.sha256(raw_csv_path.read_bytes()).hexdigest()
+
+    _needs_search = True
+    if Path(optimal_path).exists():
+        try:
+            _cached = json.loads(Path(optimal_path).read_text())
+            if _cached.get("dataset_hash") == csv_hash:
+                logger.info(
+                    "Optuna cache is valid (dataset unchanged). Skipping search. "
+                    "Delete %s to force a new search.", optimal_path
+                )
+                _needs_search = False
+            else:
+                logger.warning(
+                    "Dataset hash changed — cached hyperparameters are stale. "
+                    "Re-running Optuna search."
+                )
+        except Exception as e:
+            logger.warning("Could not read cached hyperparameters (%s). Re-running.", e)
+
+    if _needs_search:
+        logger.info("Running Optuna search (~60 s for 50 trials) ...")
         run_optuna_search(
             X_train=X_tr, y_train=y_tr, sensitive_features=s_tr,
             priv_value=priv_value, n_trials=50, output_path=optimal_path,
+            dataset_hash=csv_hash,
         )
-    # ---------------------------------
+    # ---------------------------------------------
 
     # Baseline (Now automatically uses the Optuna Winner!)
     base_clf = train_baseline(X_tr, y_tr, hyperparams_path=Path(optimal_path))
