@@ -198,16 +198,17 @@ def run_storyteller_agent(
         f"```json\n{json.dumps(payload, indent=2)}\n```"
     )
 
-    logger.info("Storyteller calling Claude (%s) [%s mode]…", model, mode_label)
-
-    response = client.messages.create(
-        model=model,
+    logger.info("Storyteller calling GitHub Models (gpt-4o-mini) [%s mode]…", mode_label)
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ],
+        temperature=0.7,
         max_tokens=2500,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message}],
     )
-
-    markdown = response.content[0].text.strip()
+    markdown = response.choices[0].message.content.strip()
 
     banner = (
         f"<!-- FairGuard Auto-Generated Report -->\n"
